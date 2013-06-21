@@ -27,53 +27,25 @@ class FidoUtils:
 
 				if os.path.commonprefix([aProjectPath, testFileName]) == aProjectPath:
 					# it's in the project, look for a fido command defined for the path
-					if ('fido' not in folder): continue
-					fido = folder['fido']
-
-					# build the command
-					commands += FidoUtils.__build_commands(fido, aProjectPath, getAll = not isInProject)
 					if isInProject == False:
 						isInProject = True
 						foundInPath = aProjectPath
 
-					# if (isinstance(fido, str) or isinstance(fido, list)):
-					# 	command = fido
-					# 	alwaysRun = False
-					# elif (isinstance(fido, dict) and 'command' in fido):
-					# 	command = fido['command']
-					# 	alwaysRun = fido.get('alwaysRun', False)
-					# else:
-					# 	continue
+					if 'fido' not in folder: continue
+					fido = folder['fido']
 
-					# if not len(commands) or alwaysRun:
-					# 	commands.append({ 'path': aProjectPath, 'command': command, 'alwaysRun': alwaysRun })
+					# build the command
+					commands += FidoUtils.__build_commands(fido, aProjectPath, getAll = False if len(commands) else True)
 
-		print(len(commands), isInProject)
-		if isInProject and 'fido' in project:
+		if 'fido' in project:
 			fido = project['fido']
-			print(len(commands))
-			commands += FidoUtils.__build_commands(fido, foundInPath, getAll = False if len(commands) else True)
-			# command = None
-			# if (isinstance(fido, str) or isinstance(fido, list)):
-			# 	command = fido
-			# 	alwaysRun = False
-			# elif (isinstance(fido, dict) and 'command' in fido):
-			# 	command = fido['command']
-			# 	alwaysRun = fido.get('alwaysRun', False)
-
-			# if command != None:
-			# 	commands.append({ 'path': aProjectPath, 'command': command, 'alwaysRun': alwaysRun })
-		# elif (isinstance(folders, str)):
-		# 	aProjectPath = projectBasePath
-		# 	testFileName = savedFileName
-		# 	print(testFileName, aProjectPath)
-		# 	if (os.path.commonprefix([aProjectPath, testFileName]) == aProjectPath):
-		# 		# it's in the project, look for a fido command defined for the path
-		# 		commands.append({ 'path': aProjectPath, 'command': folders, 'alwaysRun': False })
+			commands += FidoUtils.__build_commands(
+				fido, foundInPath, getAll = isInProject and not len(commands), projectBasePath = projectBasePath, fileName = savedFileName
+			)
 
 		return commands
 
-	def __build_commands(fido, path, getAll = False):
+	def __build_commands(fido, path, getAll = False, fileName = None, projectBasePath = None):
 		commands = []
 		# build the command
 		command = None
@@ -82,10 +54,26 @@ class FidoUtils:
 			alwaysRun = True if getAll else False
 		elif isinstance(fido, list) and getAll:
 			for f in fido:
-				commands += FidoUtils.__build_commands(f, path, getAll)
+				commands += FidoUtils.__build_commands(f, path, getAll = getAll, fileName = fileName, projectBasePath = projectBasePath)
 		elif (isinstance(fido, dict) and 'command' in fido):
-			command = fido['command']
-			alwaysRun = fido.get('alwaysRun', False)
+			if 'path' in fido:
+				if fileName != None:
+					# see if the file is within the path
+					aProjectPath = fido['path']
+					if os.path.isabs(aProjectPath) != True and projectBasePath != None:
+						aProjectPath = os.path.join(projectBasePath, aProjectPath)
+					if fido.get('follow_symlinks', False):
+						aProjectPath = os.path.realpath(aProjectPath)
+						testFileName = os.path.realpath(fileName)
+					else:
+						testFileName = fileName
+					if os.path.commonprefix([aProjectPath, testFileName]) == aProjectPath:
+						command = fido['command']
+						alwaysRun = getAll
+			else:
+				command = fido['command']
+				alwaysRun = getAll
+
 		if command != None and alwaysRun:
 			commands.append({'path': path, 'command': command})
 		return commands
@@ -106,46 +94,13 @@ class FidoEventListener(sublime_plugin.EventListener):
 		projectBasePath = os.path.dirname(projectFileName)
 		thread = None
 
-		# make sure the file is on the project path
+		# get commands
 		commands = FidoUtils.get_commands(project, projectBasePath, savedFileName)
-		# commands += FidoUtils.get_commands(project.get('fido', []), projectBasePath, savedFileName)
-		print(commands)
-		for folder in project['folders']:
-			# see if file is in path
-			if ('path' not in folder): continue
 
-			aProjectPath = folder['path']
-			if (os.path.isabs(aProjectPath) != True): aProjectPath = os.path.join(projectBasePath, aProjectPath)
-
-			if ('follow_symlinks' in folder and folder['follow_symlinks']):
-				aProjectPath = os.path.realpath(aProjectPath)
-				testFileName = os.path.realpath(savedFileName)
-			else:
-				testFileName = savedFileName
-
-			if (os.path.commonprefix([aProjectPath, testFileName]) == aProjectPath):
-				# it's in the project, look for a fido command defined for the path
-				fido = None
-				if ('fido' in folder):
-					fido = folder['fido']
-				else:
-					fido = defaultFido
-				if (fido is None): continue
-
-				# build the command
-				command = None
-				if (isinstance(fido, str) or isinstance(fido, list)):
-					command = fido
-					# shell = False
-				elif (isinstance(fido, dict) and 'command' in fido):
-					command = fido['command']
-					# shell = True if ('shell' in fido and fido['shell']) else False
-
-				# run it
-				if (command is not None):
-					thread = FidoCommandThread(command)
-					thread.start()
-					break
+		for command in commands:
+			# run it
+			thread = FidoCommandThread(command)
+			thread.start()
 
 class FidoCommandThread(threading.Thread):
 	def __init__(self, command):
@@ -153,8 +108,11 @@ class FidoCommandThread(threading.Thread):
 		threading.Thread.__init__(self)
 
 	def run(self):
-		print('\nfido$ ' + str(self.__command))
 		try:
-			print(subprocess.check_output(self.__command, shell=True, stderr=subprocess.STDOUT).decode('utf-8'))
+			os.chdir(self.__command.get('path'))
+			print(
+				'fido$ ' + str(self.__command.get('command')) + '\n' +
+				subprocess.check_output(self.__command.get('command'), shell=True, stderr=subprocess.STDOUT).decode('utf-8')
+			)
 		except CalledProcessError as error:
-			print(error.output.decode('utf-8'))
+			print('fido$ ' + str(self.__command.get('command')) + '\n' + error.output.decode('utf-8'))
