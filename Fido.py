@@ -7,6 +7,11 @@ import sublime, sublime_plugin, os, subprocess, threading
 
 class FidoUtils:
 	def get_commands(project, projectBasePath, savedFileName):
+		"""
+		Returns an array of commands to be run for the saved file name.
+
+
+		"""
 		commands = []
 		folders = project.get('folders', [])
 		isInProject = False
@@ -59,23 +64,31 @@ class FidoUtils:
 			if 'path' in fido:
 				if fileName != None:
 					# see if the file is within the path
-					aProjectPath = fido['path']
-					if os.path.isabs(aProjectPath) != True and projectBasePath != None:
-						aProjectPath = os.path.join(projectBasePath, aProjectPath)
-					if fido.get('follow_symlinks', False):
-						aProjectPath = os.path.realpath(aProjectPath)
-						testFileName = os.path.realpath(fileName)
+					if isinstance(fido['path'], str):
+						paths = [fido['path']]
+					elif isinstance(fido['path'], list):
+						paths = fido['path']
 					else:
-						testFileName = fileName
-					if os.path.commonprefix([aProjectPath, testFileName]) == aProjectPath:
-						command = fido['command']
-						alwaysRun = getAll
+						paths = []
+
+					for aProjectPath in paths:
+						if os.path.isabs(aProjectPath) != True and projectBasePath != None:
+							aProjectPath = os.path.join(projectBasePath, aProjectPath)
+						if fido.get('follow_symlinks', False):
+							aProjectPath = os.path.realpath(aProjectPath)
+							testFileName = os.path.realpath(fileName)
+						else:
+							testFileName = fileName
+						if os.path.commonprefix([aProjectPath, testFileName]) == aProjectPath:
+							command = fido['command']
+							alwaysRun = fido.get('alwaysRun', False) or getAll
+							break
 			else:
 				command = fido['command']
-				alwaysRun = getAll
+				alwaysRun = fido.get('alwaysRun', False) or getAll
 
-		if command != None and alwaysRun:
-			commands.append({'path': path, 'command': command})
+		if command != None and alwaysRun: commands.append({'path': path, 'command': command})
+
 		return commands
 
 class FidoEventListener(sublime_plugin.EventListener):
@@ -92,27 +105,23 @@ class FidoEventListener(sublime_plugin.EventListener):
 
 		savedFileName = view.file_name()
 		projectBasePath = os.path.dirname(projectFileName)
-		thread = None
 
 		# get commands
 		commands = FidoUtils.get_commands(project, projectBasePath, savedFileName)
 
-		for command in commands:
-			# run it
-			thread = FidoCommandThread(command)
-			thread.start()
+		# run 'em
+		FidoCommandThread(commands).start()
 
 class FidoCommandThread(threading.Thread):
-	def __init__(self, command):
-		self.__command = command
+	def __init__(self, commands):
+		self.__commands = commands
 		threading.Thread.__init__(self)
 
 	def run(self):
-		try:
-			os.chdir(self.__command.get('path'))
-			print(
-				'fido$ ' + str(self.__command.get('command')) + '\n' +
-				subprocess.check_output(self.__command.get('command'), shell=True, stderr=subprocess.STDOUT).decode('utf-8')
-			)
-		except CalledProcessError as error:
-			print('fido$ ' + str(self.__command.get('command')) + '\n' + error.output.decode('utf-8'))
+		for command in self.__commands:
+			try:
+				os.chdir(command.get('path'))
+				print('fido$ ' + str(command.get('command')))
+				print(subprocess.check_output(command.get('command'), shell=True, stderr=subprocess.STDOUT).decode('utf-8'))
+			except CalledProcessError as error:
+				print(error.output.decode('utf-8'))
