@@ -51,9 +51,10 @@ class FidoUtils:
 		return commands
 
 	def __build_commands(fido, path, getAll = False, fileName = None, projectBasePath = None):
-		commands = []
 		# build the command
+		commands = []
 		command = None
+		env = {}
 		if isinstance(fido, str):
 			command = fido
 			alwaysRun = True if getAll else False
@@ -80,14 +81,17 @@ class FidoUtils:
 						else:
 							testFileName = fileName
 						if os.path.commonprefix([aProjectPath, testFileName]) == aProjectPath:
+							path = aProjectPath
 							command = fido['command']
 							alwaysRun = fido.get('alwaysRun', False) or getAll
+							env = fido.get('env', {})
 							break
 			else:
 				command = fido['command']
 				alwaysRun = fido.get('alwaysRun', False) or getAll
+				env = fido.get('env', {})
 
-		if command != None and alwaysRun: commands.append({'path': path, 'command': command})
+		if command != None and alwaysRun: commands.append({'path': path, 'command': command, 'env': env})
 
 		return commands
 
@@ -120,8 +124,13 @@ class FidoCommandThread(threading.Thread):
 	def run(self):
 		for command in self.__commands:
 			try:
-				os.chdir(command.get('path'))
+				env = os.environ.copy()
+				env.update(command.get('env', {}))
 				print('fido$ ' + str(command.get('command')))
-				print(subprocess.check_output(command.get('command'), shell=True, stderr=subprocess.STDOUT).decode('utf-8'))
-			except CalledProcessError as error:
-				print(error.output.decode('utf-8'))
+				print(
+					subprocess.check_output(
+						command.get('command'), shell=True, stderr=subprocess.STDOUT, cwd=command.get('path', None), env=env
+					).decode('utf-8'),
+				)
+			except subprocess.CalledProcessError as e:
+				print(e.output.decode('utf-8'))
