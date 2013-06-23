@@ -1,6 +1,6 @@
 # Fido
 
-Fido is a plugin for Sublime Text (versions 2 and 3) for running a command when a file within your project is saved.
+Fido is a plugin for Sublime Text (versions 2 and 3) for running commands when files within a project are saved.
 
 ## Installation
 The easy way is to use [Package Control](http://wbond.net/sublime_packages/package_control).
