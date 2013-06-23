@@ -177,4 +177,4 @@ Copy that value, and set it up like so:
 
 You may or may not need to set the path depending on where the command lives on your filesystem, but it's probably a good idea to include it with each command.
 
-By the way, any environment variables can be set this way by setting key-value pairs on the env object, not **just*** PATH.
+By the way, any environment variables can be set this way by setting key-value pairs on the env object, not **just** PATH.
