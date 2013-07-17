@@ -3,7 +3,7 @@ Module:      Fido
 Description: A sublime plugin which runs a command when a file on the project path has been saved.
 Author:      Dannel Albert <cuebix@gmail.com>
 """
-import sublime, sublime_plugin, os, subprocess, threading
+import sys, sublime, sublime_plugin, os, subprocess, threading
 
 class FidoUtils:
 	def get_commands(self, project, projectBasePath, savedFileName):
@@ -77,12 +77,17 @@ class FidoUtils:
 		data = data.replace('\t', ' ')
 		return json.loads(data, strict=False)
 
+	def is_string(self, var):
+		if sys.version_info >= (3, 0, 0):
+			return isinstance(var, str)
+		return isinstance(var, str) or isinstance(var, unicode)
+
 	def __build_commands(self, fido, path, getAll = False, fileName = None, projectBasePath = None):
 		# build the command
 		commands = []
 		command = None
 		env = {}
-		if isinstance(fido, str):
+		if self.is_string(fido):
 			command = fido
 			alwaysRun = True if getAll else False
 		elif isinstance(fido, list) and getAll:
@@ -92,7 +97,7 @@ class FidoUtils:
 			if 'path' in fido:
 				if fileName != None:
 					# see if the file is within the path
-					if isinstance(fido['path'], str) or isinstance(fido['path'], unicode):
+					if self.is_string(fido['path']):
 						paths = [fido['path']]
 					elif isinstance(fido['path'], list):
 						paths = fido['path']
