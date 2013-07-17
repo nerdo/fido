@@ -180,4 +180,4 @@ You may or may not need to set the path depending on where the command lives on 
 By the way, any environment variables can be set this way by setting key-value pairs on the env object, not **just** PATH.
 
 ## Special Thanks
-Special thanks go out to titoBouzout (https://github.com/titoBouzout) for letting me use a piece of his code from his SideBarEnhancements plugin (https://github.com/titoBouzout/SideBarEnhancements) to get this working properly on ST2.
+Special thanks go out to [titoBouzout](https://github.com/titoBouzout) for letting me use a piece of his code from his [SideBarEnhancements](https://github.com/titoBouzout/SideBarEnhancements) plugin to get this working properly on ST2.
