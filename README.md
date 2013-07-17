@@ -178,3 +178,6 @@ Copy that value, and set it up like so:
 You may or may not need to set the path depending on where the command lives on your filesystem, but it's probably a good idea to include it with each command.
 
 By the way, any environment variables can be set this way by setting key-value pairs on the env object, not **just** PATH.
+
+## Special Thanks
+Special thanks go out to [titoBouzout]: https://github.com/titoBouzout for letting me use a piece of his code from his [SideBarEnhancements]: https://github.com/titoBouzout/SideBarEnhancements to get this working properly on ST2.

@@ -6,11 +6,9 @@ Author:      Dannel Albert <cuebix@gmail.com>
 import sublime, sublime_plugin, os, subprocess, threading
 
 class FidoUtils:
-	def get_commands(project, projectBasePath, savedFileName):
+	def get_commands(self, project, projectBasePath, savedFileName):
 		"""
 		Returns an array of commands to be run for the saved file name.
-
-
 		"""
 		commands = []
 		folders = project.get('folders', [])
@@ -19,9 +17,9 @@ class FidoUtils:
 		if isinstance(folders, list):
 			for folder in folders:
 				# see if file is in path
-				if ('path' not in folder): continue
+				aProjectPath = folder.get('path')
+				if aProjectPath is None: continue
 
-				aProjectPath = folder['path']
 				if os.path.isabs(aProjectPath) != True: aProjectPath = os.path.join(projectBasePath, aProjectPath)
 
 				if folder.get('follow_symlinks', False):
@@ -36,21 +34,50 @@ class FidoUtils:
 						isInProject = True
 						foundInPath = aProjectPath
 
-					if 'fido' not in folder: continue
+					if not hasattr(folder, 'fido'): continue
 					fido = folder['fido']
 
 					# build the command
-					commands += FidoUtils.__build_commands(fido, aProjectPath, getAll = False if len(commands) else True)
+					commands += self.__build_commands(fido, aProjectPath, getAll = False if len(commands) else True)
 
-		if 'fido' in project:
-			fido = project['fido']
-			commands += FidoUtils.__build_commands(
+		fido = project.get('fido')
+		if fido:
+			# fido = project['fido']
+			commands += self.__build_commands(
 				fido, foundInPath, getAll = isInProject and not len(commands), projectBasePath = projectBasePath, fileName = savedFileName
 			)
 
 		return commands
 
-	def __build_commands(fido, path, getAll = False, fileName = None, projectBasePath = None):
+	"""
+	ST2/ST3-compatible wrapper for getting the project file for a window, made possible with
+	titoBouzout's getProjectFile method (refactored to __project_file_name)
+	"""
+	def project_file_name(self, window):
+		if hasattr(window, "project_file_name"):
+			return window.project_file_name()
+		return self.__project_file_name(window)
+
+	"""
+	ST2/ST3-compatible wrapper for getting the project data for a window as a dictionary, made possible with
+	titoBouzout's getProjectFile method (refactored to __project_file_name)
+	"""
+	def project_data(self, window):
+		if hasattr(window, "project_data"):
+			return window.project_data()
+
+		# get the project file, returning None if it doesn't exist, just like ST3's get_project_file()
+		projectFileName = self.project_file_name(window)
+		if projectFileName is None:
+			return None
+
+		# read the project json file
+		import json
+		data = file(projectFileName, 'r').read()
+		data = data.replace('\t', ' ')
+		return json.loads(data, strict=False)
+
+	def __build_commands(self, fido, path, getAll = False, fileName = None, projectBasePath = None):
 		# build the command
 		commands = []
 		command = None
@@ -60,12 +87,12 @@ class FidoUtils:
 			alwaysRun = True if getAll else False
 		elif isinstance(fido, list) and getAll:
 			for f in fido:
-				commands += FidoUtils.__build_commands(f, path, getAll = getAll, fileName = fileName, projectBasePath = projectBasePath)
-		elif (isinstance(fido, dict) and 'command' in fido):
+				commands += self.__build_commands(f, path, getAll = getAll, fileName = fileName, projectBasePath = projectBasePath)
+		elif (isinstance(fido, dict) and fido.get('command')):
 			if 'path' in fido:
 				if fileName != None:
 					# see if the file is within the path
-					if isinstance(fido['path'], str):
+					if isinstance(fido['path'], str) or isinstance(fido['path'], unicode):
 						paths = [fido['path']]
 					elif isinstance(fido['path'], list):
 						paths = fido['path']
@@ -95,23 +122,61 @@ class FidoUtils:
 
 		return commands
 
+	"""
+	Original method getProjectFile by titoBouzout, author of SideBarEnhancements
+	https://github.com/titoBouzout/SideBarEnhancements/blob/master/sidebar/SideBarProject.py
+	"""
+	def __project_file_name(self, window):
+		if not window.folders():
+			return None
+		import json, re
+		data = file(os.path.normpath(os.path.join(sublime.packages_path(), '..', 'Settings', 'Session.sublime_session')), 'r').read()
+		data = data.replace('\t', ' ')
+		data = json.loads(data, strict=False)
+		projects = data['workspaces']['recent_workspaces']
+
+		if os.path.lexists(os.path.join(sublime.packages_path(), '..', 'Settings', 'Auto Save Session.sublime_session')):
+			data = file(os.path.normpath(os.path.join(sublime.packages_path(), '..', 'Settings', 'Auto Save Session.sublime_session')), 'r').read()
+			data = data.replace('\t', ' ')
+			data = json.loads(data, strict=False)
+			if hasattr(data, 'workspaces') and hasattr(data['workspaces'], 'recent_workspaces') and data['workspaces']['recent_workspaces']:
+				projects += data['workspaces']['recent_workspaces']
+			projects = list(set(projects))
+		for project_file in projects:
+			project_file = re.sub(r'^/([^/])/', '\\1:/', project_file);
+			project_json = json.loads(file(project_file, 'r').read(), strict=False)
+			if 'folders' in project_json:
+				folders = project_json['folders']
+				found_all = True
+				for directory in window.folders():
+					found = False
+					for folder in folders:
+						folder_path = re.sub(r'^/([^/])/', '\\1:/', folder['path']);
+						if folder_path == directory.replace('\\', '/'):
+							found = True
+							break;
+					if found == False:
+						found_all = False
+						break;
+			if found_all:
+				return project_file
+		return None
+
 class FidoEventListener(sublime_plugin.EventListener):
 	def on_post_save(self, view):
-		projectFileName = view.window().project_file_name()
+		fu = FidoUtils()
+		window = view.window()
+		projectFileName = fu.project_file_name(window)
 		if projectFileName is None: return
 
-		project = view.window().project_data().copy()
-
-		if 'fido' in project:
-			defaultFido = project['fido']
-		else:
-			defaultFido = None
-
-		savedFileName = view.file_name()
+		project = fu.project_data(window).copy()
 		projectBasePath = os.path.dirname(projectFileName)
 
+		defaultFido = project.get('fido', None)
+		savedFileName = view.file_name()
+
 		# get commands
-		commands = FidoUtils.get_commands(project, projectBasePath, savedFileName)
+		commands = fu.get_commands(project, projectBasePath, savedFileName)
 
 		# run 'em
 		FidoCommandThread(commands).start()
@@ -123,14 +188,12 @@ class FidoCommandThread(threading.Thread):
 
 	def run(self):
 		for command in self.__commands:
-			try:
-				env = os.environ.copy()
-				env.update(command.get('env', {}))
-				print('fido$ ' + str(command.get('command')))
-				print(
-					subprocess.check_output(
-						command.get('command'), shell=True, stderr=subprocess.STDOUT, cwd=command.get('path', None), env=env
-					).decode('utf-8'),
-				)
-			except subprocess.CalledProcessError as e:
-				print(e.output.decode('utf-8'))
+			env = os.environ.copy()
+			env.update(command.get('env', {}))
+			print('fido$ ' + str(command.get('command')))
+			output = subprocess.Popen(
+				command.get('command'), shell=True, stderr=subprocess.STDOUT, stdout=subprocess.PIPE,
+				cwd=command.get('path', None), env=env
+			).communicate()[0]
+			if hasattr(output, 'decode'): output = output.decode('utf-8')
+			print(output)
